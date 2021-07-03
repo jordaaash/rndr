@@ -43,7 +43,7 @@ pub fn process_instruction(
         }
         RNDRInstruction::DisburseFunds { amount } => {
             msg!("Instruction: DisburseFunds");
-            process_disburse(program_id, amount, accounts)
+            process_disburse_funds(program_id, amount, accounts)
         }
     }
 }
@@ -220,7 +220,11 @@ fn process_fund_job(program_id: &Pubkey, amount: u64, accounts: &[AccountInfo]) 
 }
 
 #[inline(never)] // avoid stack frame limit
-fn process_disburse(program_id: &Pubkey, amount: u64, accounts: &[AccountInfo]) -> ProgramResult {
+fn process_disburse_funds(
+    program_id: &Pubkey,
+    amount: u64,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
     if amount == 0 {
         msg!("Amount of tokens to dispurse can't be zero");
         return Err(RNDRError::UnspecifiedError.into());
