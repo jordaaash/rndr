@@ -17,7 +17,7 @@ export const findJobAddress = async (authority: PublicKey, escrow?: PublicKey): 
         [escrow] = await findEscrowAddress();
     }
     return await PublicKey.findProgramAddress(
-        [Buffer.from('escrow', 'utf8'), escrow.toBuffer(), authority.toBuffer()],
+        [Buffer.from('job', 'utf8'), escrow.toBuffer(), authority.toBuffer()],
         RNDR_PROGRAM_ID
     );
 };
