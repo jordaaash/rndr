@@ -521,6 +521,7 @@ dependencies = [
  "arrayref",
  "num-derive",
  "num-traits",
+ "num_enum",
  "solana-program",
  "spl-token",
  "thiserror",

@@ -16,40 +16,40 @@ use {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RNDRInstruction {
     // 0
-    /// Initializes the escrow account.
+    /// Initialize an Escrow account.
     ///
     /// Accounts expected by this instruction:
     ///
     ///   0. `[writable]` Escrow PDA account - uninitialized
-    ///   1. `[writable]` Escrow RNDR SPL Token account
+    ///   1. `[writable]` Escrow RNDR token account
     ///   2. `[]` RNDR SPL Token mint
     ///   3. `[]` Rent sysvar
     ///   4. `[]` Token program id
     InitEscrow {
-        /// Owner authority which can disburse funds
+        /// Owner authority that can disburse funds
         owner: Pubkey,
     },
 
     // 1
-    /// Sets the new owner of the escrow account.
+    /// Set the new owner of an Escrow account.
     ///
     /// Accounts expected by this instruction:
     ///
     ///   0. `[writable]` Escrow PDA account
-    ///   1. `[signer]` Escrow owner
+    ///   1. `[signer]` Current Escrow owner authority
     SetEscrowOwner {
         /// The new owner
         new_owner: Pubkey,
     },
 
     // 2
-    /// Fund a job
+    /// Transfer funds into an Escrow and credit a Job.
     ///
     /// Accounts expected by this instruction:
     ///
     ///   0. `[writable]` Source RNDR token account
     ///                     $authority can transfer $amount
-    ///   1. `[writable]` Destination RNDR token account
+    ///   1. `[writable]` Destination Escrow token account
     ///   2. `[writable]` Escrow PDA account
     ///   3. `[writable]` Job PDA account
     ///   4. `[signer]` Source token account authority ($authority)
@@ -61,15 +61,16 @@ pub enum RNDRInstruction {
     },
 
     // 3
-    /// Disburse funds
+    /// Transfer funds from an Escrow and debit a Job
     ///
     /// Accounts expected by this instruction:
     ///
     ///   0. `[writable]` Source Escrow token account
     ///   1. `[writable]` Destination RNDR token account
     ///   2. `[writable]` Escrow PDA account
-    ///   3. `[signer]` Escrow owner
-    ///   4. `[]` Token program id
+    ///   3. `[writable]` Job PDA account
+    ///   4. `[signer]` Escrow owner authority
+    ///   5. `[]` Token program id
     DisburseFunds {
         /// Amount of RNDR tokens to disburse
         amount: u64,
@@ -162,11 +163,14 @@ pub fn init_escrow(
     token_account: Pubkey,
     token_mint: Pubkey,
 ) -> Instruction {
-    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(&[b"escrow"], &program_id);
+    let (escrow, _bump_seed) = Pubkey::find_program_address(
+        &[b"escrow", token_account.as_ref(), spl_token::id().as_ref()],
+        &program_id,
+    );
     Instruction {
         program_id,
         accounts: vec![
-            AccountMeta::new(escrow_pubkey, false),
+            AccountMeta::new(escrow, false),
             AccountMeta::new(token_account, false),
             AccountMeta::new_readonly(token_mint, false),
             AccountMeta::new_readonly(sysvar::rent::id(), false),
@@ -179,15 +183,15 @@ pub fn init_escrow(
 /// Creates a 'SetEscrowOwner' instruction.
 pub fn set_escrow_owner(
     program_id: Pubkey,
-    escrow_owner: Pubkey,
+    escrow: Pubkey,
+    current_owner: Pubkey,
     new_owner: Pubkey,
 ) -> Instruction {
-    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(&[b"escrow"], &program_id);
     Instruction {
         program_id,
         accounts: vec![
-            AccountMeta::new(escrow_pubkey, false),
-            AccountMeta::new_readonly(escrow_owner, true),
+            AccountMeta::new(escrow, false),
+            AccountMeta::new_readonly(current_owner, true),
         ],
         data: RNDRInstruction::SetEscrowOwner { new_owner }.pack(),
     }
@@ -201,9 +205,18 @@ pub fn fund_job(
     destination_token_account: Pubkey,
     authority: Pubkey,
 ) -> Instruction {
-    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(&[b"escrow"], &program_id);
-    let (job_pubkey, _bump_seed) =
-        Pubkey::find_program_address(&[b"job", authority.as_ref()], &program_id);
+    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(
+        &[
+            b"escrow",
+            destination_token_account.as_ref(),
+            spl_token::id().as_ref(),
+        ],
+        &program_id,
+    );
+    let (job_pubkey, _bump_seed) = Pubkey::find_program_address(
+        &[b"job", escrow_pubkey.as_ref(), authority.as_ref()],
+        &program_id,
+    );
     Instruction {
         program_id,
         accounts: vec![
@@ -225,15 +238,24 @@ pub fn disburse_funds(
     amount: u64,
     source_token_account: Pubkey,
     destination_token_account: Pubkey,
+    job: Pubkey,
     escrow_owner: Pubkey,
 ) -> Instruction {
-    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(&[b"escrow"], &program_id);
+    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(
+        &[
+            b"escrow",
+            source_token_account.as_ref(),
+            spl_token::id().as_ref(),
+        ],
+        &program_id,
+    );
     Instruction {
         program_id,
         accounts: vec![
             AccountMeta::new(source_token_account, false),
             AccountMeta::new(destination_token_account, false),
             AccountMeta::new(escrow_pubkey, false),
+            AccountMeta::new(job, false),
             AccountMeta::new_readonly(escrow_owner, true),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],

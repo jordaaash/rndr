@@ -2,7 +2,12 @@
 
 use {
     num_derive::FromPrimitive,
-    solana_program::{decode_error::DecodeError, program_error::ProgramError},
+    num_traits::FromPrimitive,
+    solana_program::{
+        decode_error::DecodeError,
+        msg,
+        program_error::{PrintProgramError, ProgramError},
+    },
     thiserror::Error,
 };
 
@@ -27,5 +32,14 @@ impl From<RNDRError> for ProgramError {
 impl<T> DecodeError<T> for RNDRError {
     fn type_of() -> &'static str {
         "RNDR Error"
+    }
+}
+
+impl PrintProgramError for RNDRError {
+    fn print<E>(&self)
+    where
+        E: 'static + std::error::Error + DecodeError<E> + PrintProgramError + FromPrimitive,
+    {
+        msg!(&self.to_string());
     }
 }
