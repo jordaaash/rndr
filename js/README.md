@@ -1,8 +1,7 @@
 # RNDR client library
-
-This is a JavaScript + TypeScript library for interacting with the [RNDR program](https://github.com/jordansexton/rndr/).
+A JavaScript + TypeScript client library for RNDR.
 
 ## Links
-
-- [TypeScript docs](https://jordansexton.github.io/rndr/)
 - [Program](https://github.com/jordansexton/rndr/)
+- [Example](https://github.com/jordansexton/rndr/tree/master/js/example)
+- [TypeScript docs](https://jordansexton.github.io/rndr/)

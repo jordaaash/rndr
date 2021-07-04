@@ -15,7 +15,7 @@ export const EscrowLayout = struct<Escrow>([u8('accountType'), u64('amount'), pu
 export const ESCROW_SIZE = EscrowLayout.span;
 
 export const isEscrow = (info: AccountInfo<Buffer>): boolean => {
-    return info.data.length === ESCROW_SIZE && info.data[0] === AccountType.EscrowV1;
+    return info.data.length === ESCROW_SIZE && info.data.readUIntLE(0, 1) === AccountType.EscrowV1;
 };
 
 export const parseEscrow: Parser<Escrow> = (pubkey: PublicKey, info: AccountInfo<Buffer>) => {

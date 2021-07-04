@@ -15,7 +15,7 @@ export const JobLayout = struct<Job>([u8('accountType'), u64('amount'), publicKe
 export const JOB_SIZE = JobLayout.span;
 
 export const isJob = (info: AccountInfo<Buffer>): boolean => {
-    return info.data.length === JOB_SIZE && info.data[0] === AccountType.JobV1;
+    return info.data.length === JOB_SIZE && info.data.readUIntLE(0, 1) === AccountType.JobV1;
 };
 
 export const parseJob: Parser<Job> = (pubkey: PublicKey, info: AccountInfo<Buffer>) => {
