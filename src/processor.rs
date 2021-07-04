@@ -3,22 +3,23 @@
 use {
     crate::{
         error::RNDRError,
-        helpers::{
-            assert_rent_exempt, assert_uninitialized, spl_token_init_account, spl_token_transfer,
-            TokenInitAccountParams, TokenTransferParams,
-        },
+        helpers::{assert_rent_exempt, spl_token_transfer, TokenTransferParams},
         instruction::RNDRInstruction,
         state::{Escrow, InitEscrowParams, InitJobParams, Job},
     },
     solana_program::{
         account_info::{next_account_info, AccountInfo},
         entrypoint::ProgramResult,
+        instruction::{AccountMeta, Instruction},
         msg,
+        program::{invoke, invoke_signed},
+        program_error::ProgramError,
         program_pack::{IsInitialized, Pack},
         pubkey::Pubkey,
+        system_instruction,
         sysvar::{rent::Rent, Sysvar},
     },
-    spl_token::state::Mint,
+    spl_associated_token_account::get_associated_token_address,
 };
 
 /// Processes an instruction
@@ -55,49 +56,84 @@ fn process_init_escrow(
     accounts: &[AccountInfo],
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
+    let funder_info = next_account_info(account_info_iter)?;
     let escrow_info = next_account_info(account_info_iter)?;
-    let token_account_info = next_account_info(account_info_iter)?;
+    let associated_token_info = next_account_info(account_info_iter)?;
     let token_mint_info = next_account_info(account_info_iter)?;
     let rent_info = next_account_info(account_info_iter)?;
-    let token_program_id = next_account_info(account_info_iter)?;
+    let system_program_info = next_account_info(account_info_iter)?;
+    let token_program_info = next_account_info(account_info_iter)?;
+    let associated_token_program_info = next_account_info(account_info_iter)?;
 
-    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(
-        &[
-            b"escrow",
-            token_account_info.key.as_ref(),
-            token_program_id.key.as_ref(),
-        ],
-        program_id,
-    );
-    if &escrow_pubkey != escrow_info.key {
+    let escrow_seeds: &[&[_]] = &[
+        b"escrow",
+        token_mint_info.key.as_ref(),
+        token_program_info.key.as_ref(),
+    ];
+
+    let (escrow_address, bump_seed) = Pubkey::find_program_address(escrow_seeds, program_id);
+    if &escrow_address != escrow_info.key {
         msg!("Escrow program derived address does not match the escrow address provided");
-        return Err(RNDRError::UnspecifiedError.into());
+        return Err(ProgramError::InvalidSeeds);
     }
+
+    let bump_seed = &[bump_seed];
+    let escrow_signer_seeds: &[&[_]] = &[escrow_seeds, &[bump_seed]].concat();
+
+    invoke(
+        &Instruction {
+            program_id: *associated_token_program_info.key,
+            accounts: vec![
+                AccountMeta::new(*funder_info.key, true),
+                AccountMeta::new(*associated_token_info.key, false),
+                AccountMeta::new_readonly(escrow_address, false),
+                AccountMeta::new_readonly(*token_mint_info.key, false),
+                AccountMeta::new_readonly(*system_program_info.key, false),
+                AccountMeta::new_readonly(*token_program_info.key, false),
+                AccountMeta::new_readonly(*rent_info.key, false),
+            ],
+            data: vec![],
+        },
+        &[
+            funder_info.clone(),
+            associated_token_info.clone(),
+            escrow_info.clone(),
+            token_mint_info.clone(),
+            system_program_info.clone(),
+            token_program_info.clone(),
+            rent_info.clone(),
+        ],
+    )?;
 
     let rent = &Rent::from_account_info(rent_info)?;
-    assert_rent_exempt(rent, escrow_info)?;
-
-    let mut escrow = assert_uninitialized::<Escrow>(escrow_info)?;
-    if escrow_info.owner != program_id {
-        msg!("Escrow provided is not owned by the RNDR program");
-        return Err(RNDRError::UnspecifiedError.into());
+    let required_lamports = rent
+        .minimum_balance(Escrow::LEN)
+        .max(1)
+        .saturating_sub(escrow_info.lamports());
+    if required_lamports > 0 {
+        invoke(
+            &system_instruction::transfer(funder_info.key, escrow_info.key, required_lamports),
+            &[
+                funder_info.clone(),
+                escrow_info.clone(),
+                system_program_info.clone(),
+            ],
+        )?;
     }
 
-    Mint::unpack(&token_mint_info.try_borrow_data()?).map_err(|_| RNDRError::UnspecifiedError)?;
-    if token_mint_info.owner != token_program_id.key {
-        msg!("RNDR token mint is not owned by the token program provided");
-        return Err(RNDRError::UnspecifiedError.into());
-    }
+    invoke_signed(
+        &system_instruction::allocate(escrow_info.key, Escrow::LEN as u64),
+        &[escrow_info.clone(), system_program_info.clone()],
+        &[escrow_signer_seeds],
+    )?;
 
-    spl_token_init_account(TokenInitAccountParams {
-        account: token_account_info.clone(),
-        mint: token_mint_info.clone(),
-        owner: escrow_info.clone(),
-        rent: rent_info.clone(),
-        token_program: token_program_id.clone(),
-    })?;
+    invoke_signed(
+        &system_instruction::assign(escrow_info.key, program_id),
+        &[escrow_info.clone(), system_program_info.clone()],
+        &[escrow_signer_seeds],
+    )?;
 
-    escrow.init(InitEscrowParams { owner });
+    let escrow = Escrow::new(InitEscrowParams { owner });
     Escrow::pack(escrow, &mut escrow_info.try_borrow_mut_data()?)?;
 
     Ok(())
@@ -142,24 +178,34 @@ fn process_fund_job(program_id: &Pubkey, amount: u64, accounts: &[AccountInfo]) 
 
     let account_info_iter = &mut accounts.iter();
     let source_token_info = next_account_info(account_info_iter)?;
-    let destination_token_info = next_account_info(account_info_iter)?;
+    let associated_token_info = next_account_info(account_info_iter)?;
     let escrow_info = next_account_info(account_info_iter)?;
+    let token_mint_info = next_account_info(account_info_iter)?;
     let job_info = next_account_info(account_info_iter)?;
     let authority_info = next_account_info(account_info_iter)?;
     let rent_info = next_account_info(account_info_iter)?;
-    let token_program_id = next_account_info(account_info_iter)?;
+    let token_program_info = next_account_info(account_info_iter)?;
 
-    let (escrow_pubkey, _bump_seed) = Pubkey::find_program_address(
+    let (escrow_address, _bump_seed) = Pubkey::find_program_address(
         &[
             b"escrow",
-            destination_token_info.key.as_ref(),
-            token_program_id.key.as_ref(),
+            token_mint_info.key.as_ref(),
+            token_program_info.key.as_ref(),
         ],
         program_id,
     );
-    if &escrow_pubkey != escrow_info.key {
+    if &escrow_address != escrow_info.key {
         msg!("Escrow program derived address does not match the escrow address provided");
-        return Err(RNDRError::UnspecifiedError.into());
+        return Err(ProgramError::InvalidSeeds);
+    }
+
+    let associated_token_address =
+        get_associated_token_address(&escrow_address, token_mint_info.key);
+    if &associated_token_address != associated_token_info.key {
+        msg!(
+            "Escrow associated token address does not match the associated token address provided"
+        );
+        return Err(ProgramError::InvalidSeeds);
     }
 
     let (job_pubkey, _bump_seed) = Pubkey::find_program_address(
@@ -172,7 +218,7 @@ fn process_fund_job(program_id: &Pubkey, amount: u64, accounts: &[AccountInfo]) 
     );
     if &job_pubkey != job_info.key {
         msg!("Job program derived address does not match the job address provided");
-        return Err(RNDRError::UnspecifiedError.into());
+        return Err(ProgramError::InvalidSeeds);
     }
 
     let mut escrow = Escrow::unpack(&escrow_info.try_borrow_data()?)?;
@@ -183,6 +229,8 @@ fn process_fund_job(program_id: &Pubkey, amount: u64, accounts: &[AccountInfo]) 
 
     let mut job = Job::unpack_unchecked(&job_info.try_borrow_data()?)?;
     if !job.is_initialized() {
+        // @TODO: initialize using system program
+
         let rent = &Rent::from_account_info(rent_info)?;
         assert_rent_exempt(rent, job_info)?;
 
@@ -197,11 +245,11 @@ fn process_fund_job(program_id: &Pubkey, amount: u64, accounts: &[AccountInfo]) 
 
     spl_token_transfer(TokenTransferParams {
         source: source_token_info.clone(),
-        destination: destination_token_info.clone(),
+        destination: associated_token_info.clone(),
         amount,
         authority: authority_info.clone(),
         authority_signer_seeds: &[],
-        token_program: token_program_id.clone(),
+        token_program: token_program_info.clone(),
     })?;
 
     job.amount = job
@@ -248,7 +296,7 @@ fn process_disburse_funds(
         Pubkey::find_program_address(authority_signer_seeds, program_id);
     if &escrow_pubkey != escrow_info.key {
         msg!("Escrow program derived address does not match the escrow address provided");
-        return Err(RNDRError::UnspecifiedError.into());
+        return Err(ProgramError::InvalidSeeds);
     }
 
     let mut escrow = Escrow::unpack(&escrow_info.try_borrow_data()?)?;
@@ -277,7 +325,7 @@ fn process_disburse_funds(
     );
     if &job_pubkey != job_info.key {
         msg!("Job program derived address does not match the job address provided");
-        return Err(RNDRError::UnspecifiedError.into());
+        return Err(ProgramError::InvalidSeeds);
     }
 
     job.amount = job

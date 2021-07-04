@@ -62,7 +62,7 @@ impl Pack for Escrow {
 
         *account_type = u8::from(self.account_type).to_le_bytes();
         *amount = self.amount.to_le_bytes();
-        owner.copy_from_slice(self.owner.as_ref());
+        owner.copy_from_slice(&self.owner.to_bytes());
     }
 
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {

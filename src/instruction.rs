@@ -7,8 +7,10 @@ use {
         msg,
         program_error::ProgramError,
         pubkey::{Pubkey, PUBKEY_BYTES},
-        sysvar,
+        system_program,
+        sysvar::rent,
     },
+    spl_associated_token_account::get_associated_token_address,
     std::{convert::TryInto, mem::size_of},
 };
 
@@ -137,11 +139,11 @@ impl RNDRInstruction {
         match *self {
             Self::InitEscrow { owner } => {
                 buf.push(0);
-                buf.extend_from_slice(owner.as_ref());
+                buf.extend_from_slice(&owner.to_bytes());
             }
             Self::SetEscrowOwner { new_owner } => {
                 buf.push(1);
-                buf.extend_from_slice(new_owner.as_ref());
+                buf.extend_from_slice(&new_owner.to_bytes());
             }
             Self::FundJob { amount } => {
                 buf.push(2);
@@ -160,21 +162,25 @@ impl RNDRInstruction {
 pub fn init_escrow(
     program_id: Pubkey,
     owner: Pubkey,
-    token_account: Pubkey,
+    funder: Pubkey,
     token_mint: Pubkey,
 ) -> Instruction {
-    let (escrow, _bump_seed) = Pubkey::find_program_address(
-        &[b"escrow", token_account.as_ref(), spl_token::id().as_ref()],
+    let (escrow_address, _bump_seed) = Pubkey::find_program_address(
+        &[b"escrow", token_mint.as_ref(), spl_token::id().as_ref()],
         &program_id,
     );
+    let associated_token_address = get_associated_token_address(&escrow_address, &token_mint);
     Instruction {
         program_id,
         accounts: vec![
-            AccountMeta::new(escrow, false),
-            AccountMeta::new(token_account, false),
+            AccountMeta::new(funder, true),
+            AccountMeta::new(escrow_address, false),
+            AccountMeta::new(associated_token_address, false),
             AccountMeta::new_readonly(token_mint, false),
-            AccountMeta::new_readonly(sysvar::rent::id(), false),
+            AccountMeta::new_readonly(rent::id(), false),
+            AccountMeta::new_readonly(system_program::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(spl_associated_token_account::id(), false),
         ],
         data: RNDRInstruction::InitEscrow { owner }.pack(),
     }
@@ -225,7 +231,7 @@ pub fn fund_job(
             AccountMeta::new(escrow_pubkey, false),
             AccountMeta::new(job_pubkey, false),
             AccountMeta::new_readonly(authority, true),
-            AccountMeta::new_readonly(sysvar::rent::id(), false),
+            AccountMeta::new_readonly(rent::id(), false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: RNDRInstruction::FundJob { amount }.pack(),

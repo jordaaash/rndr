@@ -62,7 +62,7 @@ impl Pack for Job {
 
         *account_type = u8::from(self.account_type).to_le_bytes();
         *amount = self.amount.to_le_bytes();
-        authority.copy_from_slice(self.authority.as_ref());
+        authority.copy_from_slice(&self.authority.to_bytes());
     }
 
     fn unpack_from_slice(input: &[u8]) -> Result<Self, ProgramError> {

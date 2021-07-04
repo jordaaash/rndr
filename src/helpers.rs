@@ -6,11 +6,9 @@ use {
         instruction::Instruction,
         msg,
         program::{invoke, invoke_signed},
-        program_error::ProgramError,
-        program_pack::{IsInitialized, Pack},
         sysvar::rent::Rent,
     },
-    spl_token::instruction::{initialize_account, transfer},
+    spl_token::instruction::transfer,
 };
 
 #[inline(always)]
@@ -21,41 +19,6 @@ pub fn assert_rent_exempt(rent: &Rent, account_info: &AccountInfo) -> ProgramRes
     } else {
         Ok(())
     }
-}
-
-#[inline(always)]
-pub fn assert_uninitialized<T: Pack + IsInitialized>(
-    account_info: &AccountInfo,
-) -> Result<T, ProgramError> {
-    let account: T = T::unpack_unchecked(&account_info.try_borrow_data()?)?;
-    if account.is_initialized() {
-        Err(RNDRError::UnspecifiedError.into())
-    } else {
-        Ok(account)
-    }
-}
-
-pub struct TokenInitAccountParams<'a> {
-    pub account: AccountInfo<'a>,
-    pub mint: AccountInfo<'a>,
-    pub owner: AccountInfo<'a>,
-    pub rent: AccountInfo<'a>,
-    pub token_program: AccountInfo<'a>,
-}
-
-/// Issue a spl_token `InitializeAccount` instruction.
-#[inline(always)]
-pub fn spl_token_init_account(params: TokenInitAccountParams<'_>) -> ProgramResult {
-    let TokenInitAccountParams {
-        account,
-        mint,
-        owner,
-        rent,
-        token_program,
-    } = params;
-    let ix = initialize_account(token_program.key, account.key, mint.key, owner.key)?;
-    let result = invoke(&ix, &[account, mint, owner, rent, token_program]);
-    result.map_err(|_| RNDRError::UnspecifiedError.into())
 }
 
 pub struct TokenTransferParams<'a: 'b, 'b> {
