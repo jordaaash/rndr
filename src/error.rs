@@ -21,6 +21,9 @@ pub enum RNDRError {
     /// UnspecifiedError
     #[error("UnspecifiedError")]
     UnspecifiedError,
+    /// MathError
+    #[error("MathError")]
+    MathError,
 }
 
 impl From<RNDRError> for ProgramError {
