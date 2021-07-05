@@ -1,0 +1,17 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "target": "esnext",
+        "noEmit": true,
+        "typeRoots": ["node_modules/@types"],
+        "module": "commonjs",
+        "esModuleInterop": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "declaration": true,
+        "moduleResolution": "node",
+        "stripInternal": true
+    },
+    "include": [ "src/util" ],
+    "exclude": ["node_modules"]
+}

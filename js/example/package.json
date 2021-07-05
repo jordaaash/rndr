@@ -1,0 +1,42 @@
+{
+    "private": true,
+    "name": "rndr-example",
+    "version": "0.1.0",
+    "description": "RNDR client example",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jordansexton/rndr"
+    },
+    "bugs": {
+        "url": "https://github.com/jordansexton/rndr/issues"
+    },
+    "keywords": [],
+    "publishConfig": {
+        "access": "public"
+    },
+    "main": "index.ts",
+    "engines": {
+        "node": ">= 10"
+    },
+    "scripts": {
+        "start": "ts-node index.ts",
+        "init-escrow": "ts-node src/scripts/initEscrow.ts",
+        "set-escrow-owner": "ts-node src/scripts/setEscrowOwner.ts",
+        "fund-job": "ts-node src/scripts/fundJob.ts",
+        "disburse-funds": "ts-node src/scripts/disburseFunds.ts"
+    },
+    "dependencies": {
+        "@solana/spl-token": "^0.1.6",
+        "@solana/web3.js": "^1.20.0",
+        "express": "^4.17.1",
+        "rndr": "file:..",
+        "ts-node": "^10.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^15.14.0",
+        "@types/prettier": "^2.3.1",
+        "prettier": "^2.2.1",
+        "tslib": "^2.3.0",
+        "typescript": "^4.3.5"
+    }
+}
